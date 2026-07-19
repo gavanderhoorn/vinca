@@ -683,6 +683,7 @@ def generate_source(distro, vinca_conf):
         entry = {}
         entry["git"] = url
         entry[ref_type] = ref
+        entry["submodules"] = vinca_conf["_snapshot"][pkg_shortname].get("submodules", True)
         pkg_names = resolve_pkgname(pkg_shortname, vinca_conf, distro)
         pkg_version = distro.get_version(pkg_shortname)
         print("Checking ", pkg_shortname, pkg_version)
@@ -738,6 +739,8 @@ def generate_source_version(distro, vinca_conf):
         entry = {}
         entry["git"] = url
         entry[ref_type] = ref
+        entry["submodules"] = vinca_conf["_snapshot"][pkg_shortname].get("submodules", True)
+
         pkg_names = resolve_pkgname(pkg_shortname, vinca_conf, distro)
         version = distro.get_version(pkg_shortname)
         if vinca_conf.get("trigger_new_versions"):
