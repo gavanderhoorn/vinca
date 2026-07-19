@@ -195,13 +195,21 @@ class Distro(object):
         if "gitlab.com" in raw_url_base:
             raw_url = self._construct_raw_url_gitlab(pkg_info)
             return self._download_raw_pkg_xml_or_cached(url=raw_url)
+        if pkg_info.get("private_gitlab", False):
+            gitlab_token = os.environ.get("GITLAB_PRIVATE_TOKEN", None)
+            if not gitlab_token:
+                raise RuntimeError(f"Private gitlab but no token")
+            raw_url = self._construct_raw_url_gitlab_private(pkg_info)
+            headers = { "PRIVATE-TOKEN": gitlab_token }
+            return self._download_raw_pkg_xml_or_cached(url=raw_url, headers=headers)
         raise RuntimeError(f"Cannot handle unknown repository hoster: {raw_url_base}")
 
-    def _download_raw_pkg_xml_or_cached(self, url):
+    def _download_raw_pkg_xml_or_cached(self, url, headers={}):
         if url in self._additional_xml_cache:
             return self._additional_xml_cache[url]
         try:
-            with urllib.request.urlopen(url) as resp:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req) as resp:
                 xml_content = resp.read().decode("utf-8")
                 self._additional_xml_cache[url] = xml_content
                 return xml_content
@@ -242,4 +250,37 @@ class Distro(object):
         if additional_folder != "":
             additional_folder = additional_folder + "/"
         raw_url = f"{raw_url_base}/-/raw/{ref}/{additional_folder}{xml_name}"
+        return raw_url
+
+    # from https://docs.gitlab.com/api/repository_files/#retrieve-a-raw-file-from-a-repository
+    #
+    # /projects/:id/repository/files/:file_path/raw
+    #
+    #  id       : ID or URL-encoded path of the project
+    #  file_path: URL-encoded full path to the file
+    #  ref:     : Name of branch, tag, or commit. Default is the HEAD of the project
+    def _construct_raw_url_gitlab_private(self, pkg_info):
+        from urllib.parse import urlsplit
+        from urllib.parse import quote as urllib_quote
+
+        raw_url_base = pkg_info.get("url")
+        if raw_url_base.endswith(".git"):
+            raw_url_base = raw_url_base[:-4]
+        # Use rev if available, otherwise fallback to tag
+        ref = pkg_info.get("rev") or pkg_info.get("tag")
+        xml_name = pkg_info.get("package_xml_name", "package.xml")
+        additional_folder = pkg_info.get("additional_folder", "")
+        if additional_folder != "":
+            additional_folder = additional_folder + "/"
+
+        splits = urlsplit(raw_url_base)
+        proj = splits.path.removeprefix('/')
+        path = f"{additional_folder}{xml_name}"
+
+        # force quoting of '/' as well by setting safe=''
+        encoded_proj = urllib_quote(proj, safe='')
+        encoded_path = urllib_quote(path, safe='')
+
+        ref = ref or "HEAD"
+        raw_url = f"{splits.scheme}://{splits.netloc}/api/v4/projects/{encoded_proj}/repository/files/{encoded_path}/raw?ref={ref}"
         return raw_url
